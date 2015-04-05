@@ -1,5 +1,3 @@
-//-----ThreeJS handling
-
 var camera, scene, renderer;
 var effect, controls;
 var element, container;
@@ -8,14 +6,14 @@ var clock = new THREE.Clock();
 
 var manager = new THREE.LoadingManager();
 manager.onProgress = function ( item, loaded, total ) {
-	console.log( item, loaded, total );
+  console.log( item, loaded, total );
 }
 var loader = new THREE.OBJLoader( manager );
 var onProgress = function ( xhr ) {
-	if ( xhr.lengthComputable ) {
-		var percentComplete = xhr.loaded / xhr.total * 100;
-		console.log( Math.round(percentComplete, 2) + '% downloaded' );
-	}
+  if ( xhr.lengthComputable ) {
+    var percentComplete = xhr.loaded / xhr.total * 100;
+    console.log( Math.round(percentComplete, 2) + '% downloaded' );
+  }
 };
 var onError = function ( xhr ) {};
 var texture = new THREE.Texture();
@@ -28,6 +26,8 @@ function init() {
   element = renderer.domElement;
   container = document.getElementById('example');
   container.appendChild(element);
+
+  effect = new THREE.StereoEffect(renderer);
 
   scene = new THREE.Scene();
 
@@ -104,6 +104,7 @@ function resize() {
   camera.updateProjectionMatrix();
 
   renderer.setSize(width, height);
+  effect.setSize(width, height);
 }
 
 function update(dt) {
@@ -115,7 +116,7 @@ function update(dt) {
 }
 
 function render(dt) {
-  renderer.render(scene, camera);
+  effect.render(scene, camera);
 }
 
 function animate(t) {
@@ -138,7 +139,7 @@ function fullscreen() {
 }
 
 
-//-------Firebase handling
+//---Handle firebase
 
 var fbRef = new Firebase( 'https://cardboard-collab.firebaseio.com/' );
 var modelRef = fbRef.child( "models" );
@@ -146,93 +147,32 @@ var sessionRef = fbRef.child( "session" );
 
 $(document).ready(function(){
 
+  sessionRef.limitToLast(10).on( 'child_added', function (snapshot) {
+    var data = snapshot.val();
+    var name = data.objectname;
+    var id = data.id;
+    var filename = data.filename;
+    var pos = { x:data.x, y:data.y, z:data.z };
+    var rotation = { yaw:data.yaw, pitch:data.pitch, roll:data.roll };
 
-	var models = $("#model-list");
-	var sceneModels = $("#scene-list");
+    //Add to scene
+    var loader = new THREE.ImageLoader( manager );
+    loader.load( 'models/UV_Grid_Sm.jpg', function ( image ) {
+      texture.image = image;
+      texture.needsUpdate = true;
+    } );
 
-	modelRef.limitToLast(10).on( 'child_added', function (snapshot) {
-		var data = snapshot.val();
-		var name = data.objectname || "unknown";
-		var id = data.id;
-		var dir = data.filename;
+    var loader = new THREE.OBJLoader( manager );    
+    loader.load( 'models/'+filename, function ( object ) {
+      object.traverse( function ( child ) {
+        if ( child instanceof THREE.Mesh ) {
+          child.material.map = texture;
+        }
+      } );
+      object.position.x = pos.x;
+      object.position.y = pos.y;
+      scene.add( object );
+    }, onProgress, onError);
 
-		if ( name ) {
-			var modelElement = $("<li>");
-			modelElement.click( function() {
-				return addToScene( name, id, dir );
-			} );
-			modelElement.hover( function() {
-				modelElement.css( {'color': '#fff'} );
-			},
-			function(){
-				modelElement.css( {'color': '#000'} );
-			})
-			modelElement.text( name );
-			models.append( modelElement );
-		}
-	} );
-
-	sessionRef.limitToLast(10).on( 'child_added', function (snapshot) {
-		var data = snapshot.val();
-		var name = data.objectname;
-		var id = data.id;
-		var filename = data.filename;
-		var pos = { x:data.x, y:data.y, z:data.z };
-		var rotation = [ data.yaw, data.pitch, data.roll ];
-
-		//Add to teacher controls
-		if ( name ) {
-			var sceneElement = $("<li>");
-			sceneElement.text( name );
-			sceneModels.append( sceneElement );
-		}
-
-		//Add to scene
-		var loader = new THREE.ImageLoader( manager );
-		loader.load( 'models/UV_Grid_Sm.jpg', function ( image ) {
-			texture.image = image;
-			texture.needsUpdate = true;
-		} );
-
-		var loader = new THREE.OBJLoader( manager );		
-		loader.load( 'models/'+filename, function ( object ) {
-			object.traverse( function ( child ) {
-				if ( child instanceof THREE.Mesh ) {
-					child.material.map = texture;
-				}
-			} );
-			object.position.x = pos.x;
-			object.position.y = pos.y;
-			scene.add( object );
-		}, onProgress, onError);
-
-	} ); 
-
-	$( "#clear-btn" ).click( function (e) {
-	    var onComplete = function(error) {
-	      if (error) {
-	        console.log('Synchronization failed');
-	      } else {
-	        console.log('Synchronization succeeded');
-	      }
-	    };
-
-	    sessionRef.remove(onComplete); 
-	    sceneModels.empty();
-	})
+  } ); 
 });
-
-function addToScene( _name, _id, _filename ) {
-	console.log( _name + " added to scene" );
-	sessionRef.push( {
-		id: _id,
-		objectname: _name,
-		filename: _filename,
-		x: 10,
-		y: 10,
-		z: 10,
-		yaw: 0,
-		pitch: 0,
-		roll: 0
-	});
-}
